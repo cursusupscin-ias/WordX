@@ -54,7 +54,10 @@ jobs:
 
       - name: Generate Android project
         run: npx cap add android
-
+     
+      - name: Generate WORDX Android launcher icons and splash screens
+        run: npx capacitor-assets generate --android
+     
       - name: Restore Firebase Android configuration
         run: |
           if [ ! -f google-services.json ]; then
