@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "929677269101-rnfq0fmejm04gcdigbo6c91pcbo7fg6a.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.wordx.app",
+            "certificate_hash": "6984e582152db4029acfd731b5e0854b2e684f69"
+          }
+        },
+        {
           "client_id": "929677269101-i18ulenbdnmkbdg6frkhj3e3902uuoks.apps.googleusercontent.com",
           "client_type": 3
         }
