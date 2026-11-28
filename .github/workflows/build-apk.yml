@@ -54,18 +54,81 @@ jobs:
 
       - name: Generate Android project
         run: npx cap add android
-     
+
       - name: Generate WORDX Android launcher icons and splash screens
         run: npx capacitor-assets generate --android
-     
+
       - name: Restore Firebase Android configuration
         run: |
           if [ ! -f google-services.json ]; then
-            echo "ERROR: google-services.json is missing from the repository root."
+            echo "ERROR: google-services.json is missing."
             exit 1
           fi
           mkdir -p android/app
           cp google-services.json android/app/google-services.json
+
+      - name: Restore permanent WORDX debug keystore
+        env:
+          WORDX_DEBUG_KEYSTORE: ${{ secrets.WORDX_DEBUG_KEYSTORE }}
+          WORDX_DEBUG_STORE_PASSWORD: ${{ secrets.WORDX_DEBUG_STORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          test -n "$WORDX_DEBUG_KEYSTORE"
+          test -n "$WORDX_DEBUG_STORE_PASSWORD"
+
+          KEYSTORE="$RUNNER_TEMP/wordx-debug-key.jks"
+
+          printf '%s' "$WORDX_DEBUG_KEYSTORE" | base64 --decode > "$KEYSTORE"
+
+          test -s "$KEYSTORE"
+
+          keytool -list \
+            -keystore "$KEYSTORE" \
+            -alias wordxdebug \
+            -storepass "$WORDX_DEBUG_STORE_PASSWORD" \
+            >/dev/null
+
+          echo "Permanent WORDX debug keystore verified."
+
+      - name: Configure permanent Android debug signing
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          gradle = Path("android/app/build.gradle")
+          content = gradle.read_text()
+
+          if "wordxDebug" in content:
+              raise SystemExit("Signing configuration already exists. Stopping to avoid duplication.")
+
+          marker = "android {"
+
+          if marker not in content:
+              raise SystemExit("Could not locate Android Gradle configuration.")
+
+          signing = '''
+              signingConfigs {
+                  wordxDebug {
+                      storeFile file(System.getenv("WORDX_DEBUG_KEYSTORE_PATH"))
+                      storePassword System.getenv("WORDX_DEBUG_STORE_PASSWORD")
+                      keyAlias "wordxdebug"
+                      keyPassword System.getenv("WORDX_DEBUG_KEY_PASSWORD")
+                  }
+              }
+
+              buildTypes {
+                  debug {
+                      signingConfig signingConfigs.wordxDebug
+                  }
+              }
+          '''
+
+          content = content.replace(marker, marker + signing, 1)
+          gradle.write_text(content)
+
+          print("Permanent WORDX debug signing configured.")
+          PY
 
       - name: Sync Capacitor
         run: npx cap sync android
@@ -76,24 +139,32 @@ jobs:
           test -f android/app/google-services.json
           echo "Android project verified."
 
-      - name: Build debug APK
+      - name: Build debug APK with permanent signing key
         working-directory: android
+        env:
+          WORDX_DEBUG_KEYSTORE_PATH: ${{ runner.temp }}/wordx-debug-key.jks
+          WORDX_DEBUG_STORE_PASSWORD: ${{ secrets.WORDX_DEBUG_STORE_PASSWORD }}
+          WORDX_DEBUG_KEY_PASSWORD: ${{ secrets.WORDX_DEBUG_KEY_PASSWORD }}
         run: |
+          set -euo pipefail
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Extract APK signing fingerprints
+      - name: Verify APK signing fingerprints
         run: |
-          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          set -euo pipefail
 
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
 
-          if [ -z "$APKSIGNER" ]; then
-            echo "ERROR: apksigner was not found."
-            exit 1
-          fi
+          test -n "$APKSIGNER"
+          test -f "$APK"
 
-          "$APKSIGNER" verify --print-certs "$APK"
+          "$APKSIGNER" verify --print-certs "$APK" | tee "$RUNNER_TEMP/wordx-cert.txt"
+
+          grep -F "7D:2F:BC:6D:AA:77:34:83:A1:8D:70:1A:4E:7C:3F:AE:BC:C9:91:40" "$RUNNER_TEMP/wordx-cert.txt"
+
+          echo "Permanent WORDX signing certificate verified."
 
       - name: Verify APK
         run: |
