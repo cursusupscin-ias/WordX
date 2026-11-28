@@ -150,6 +150,7 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug
 
+     
       - name: Verify APK signing fingerprints
         run: |
           set -euo pipefail
@@ -160,9 +161,16 @@ jobs:
           test -n "$APKSIGNER"
           test -f "$APK"
 
-          "$APKSIGNER" verify --print-certs "$APK" | tee "$RUNNER_TEMP/wordx-cert.txt"
+          "$APKSIGNER" verify --print-certs "$APK" > "$RUNNER_TEMP/wordx-cert.txt"
 
-          grep -F "7D:2F:BC:6D:AA:77:34:83:A1:8D:70:1A:4E:7C:3F:AE:BC:C9:91:40" "$RUNNER_TEMP/wordx-cert.txt"
+          ACTUAL_SHA1=$(grep "certificate SHA-1 digest:" "$RUNNER_TEMP/wordx-cert.txt" | awk '{print tolower($NF)}' | tr -d ':')
+
+          EXPECTED_SHA1="7d2fbc6daa773483a18d701a4e7c3faebcc99140"
+
+          if [ "$ACTUAL_SHA1" != "$EXPECTED_SHA1" ]; then
+            echo "ERROR: APK signing certificate mismatch."
+            exit 1
+          fi
 
           echo "Permanent WORDX signing certificate verified."
 
